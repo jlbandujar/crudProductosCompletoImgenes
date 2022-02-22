@@ -9,6 +9,8 @@ const { body, validationResult, check } = require("express-validator");
 const { generarJWT } = require("../helpers/generarJWT");
 const { validarJWT } = require("../middleware/validar-JWT");
 const { OAuth2Client } = require("google-auth-library");
+const fileUpload = require("express-fileupload");
+const { v4:uuidv4}= require("uuid");
 
 const port = process.env.PORT;
 class Server {
@@ -22,11 +24,59 @@ class Server {
     this.app.use(express.json()); //Middleware para leer json;
     this.app.use(express.static("public"));
     //^Middleware para servir la carpeta public
+    this.app.use(fileUpload({
+      useTempFiles : true,
+      tempFileDir : '/tmp/'
+  }));
   }
   async conectarDB() {
     await dbConnection();
   }
   rutas() {
+    /******* RUTA SUBIR ARCHIVOS */
+    this.app.post(
+      "/subir",
+      async function (req, res) {
+        if (!req.files ){
+          res.status(400).json({
+            msg: "no se han mandado archivos"    
+          });
+        }
+
+        //esperamos un archivo con el nombre de 'archivo'
+        if (!req.files.archivo ){
+          res.status(400).json({
+            msg: "no se han mandado 'archivo'"    
+          });
+        } else { //SI se ha enviado 'archivo'
+          const  { archivo } = req.files;
+          const nombreCortado = archivo.name.split(".");
+          const extension = nombreCortado[nombreCortado.length -1];
+          //validar la extensión
+          const extensionesValidas = ['jpg','jpeg','png','gif'];
+          if ( !extensionesValidas.includes(extension)){
+            return res.status(400).json({
+              msg: `La extensión ${extension} no está permitida ${extensionesValidas}`
+            })
+          }
+          const nombreTemporal = uuidv4() +'.' + extension;
+          const path = require('path');
+          console.log('ARCHIVO',archivo)
+          const uploadPath = path.join(__dirname,'../public/imagenes',nombreTemporal);
+          archivo.mv(uploadPath, function(err){
+            if ( err ) {
+              return res.status(500).json(err);
+            }
+            res.status(200).json({
+              msg:'Archivo subido con éxito',
+              uploadPath
+             
+            })
+          })
+
+        }
+      })
+
     /******* RUTAS DE google *****/
     this.app.post(
       "/google",
@@ -37,11 +87,12 @@ class Server {
         if (!erroresVal.isEmpty()) {
           return res.status(400).json({ msg: erroresVal.array() });
         }
-        const { id_token } = req.body;
-        //******** COMPRUEBO EL TOKEN *************/
-        const { OAuth2Client } = require("google-auth-library");
-        const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-        
+        try {
+          //******** COMPRUEBO EL TOKEN *************/
+          const { id_token } = req.body;
+          const { OAuth2Client } = require("google-auth-library");
+          const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
           const ticket = await client.verifyIdToken({
             idToken: id_token,
             audience: process.env.GOOGLE_CLIENT_ID, // Specify the CLIENT_ID of the app that accesses the backend
@@ -49,17 +100,44 @@ class Server {
             //[CLIENT_ID_1, CLIENT_ID_2, CLIENT_ID_3]
           });
           const payload = ticket.getPayload();
-          console.log('PAYLOAD',payload);
+          console.log("PAYLOAD", payload);
+          const correo = payload.email;
+          const img = payload.picture;
+          const nombre = payload.name;
+          let miusuario = await Usuario.findOne({ correo });
+          if (!miusuario) {
+            let data = {
+              nombre,
+              correo,
+              password: "123",
+              img,
+              google: true,
+              rol: "USER_ROLE",
+            };
+            console.log("USUARIO A CREARR", data);
+            miusuario = new Usuario(data);
+            await miusuario.save();
+            console.log("USUARIO A CREADO", miusuario);
+          }
           // If request specified a G Suite domain:
           // const domain = payload['hd'];
-        
+          //*** gnero un token */
+          const tokenGenerado = await generarJWT(miusuario.id);
+          const id = miusuario.id;
+          //******** ENVÍO UN RESPUESTA */
 
-        //******** ENVÍO UN RESPUESTA */
-        res.json({
-          msg: "Todo bien con Google",
-          id_token,
-          payload
-        });
+          res.json({
+            msg: "Todo bien con Google",
+            id_token,
+            token: tokenGenerado,
+            miusuario,
+          });
+        } catch (error) {
+          res.json({
+            msg: "ERROR DE VERIFICACIÓN DE GMAIL",
+            id_token
+          });
+        }
       }
     );
 
