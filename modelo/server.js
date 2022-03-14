@@ -33,6 +33,75 @@ class Server {
     await dbConnection();
   }
   rutas() {
+    /******* RUTA SUBIR ARCHIVOS 2 */
+    this.app.post(
+      "/subir2",
+      async function (req, res) {
+               
+        //esperamos un archivo con el nombre de 'archivo'
+        //SI NO SE HA ENVIADO ARCHIVO
+        if (!req.files ){
+          const nombre = req.body.nombre;
+          const categoria = req.body.categoria;
+          const precio = req.body.precio;
+          const imagen = "";
+          const producto = {nombre,categoria,precio,imagen}
+          console.log(producto);
+          let miProducto = new Producto(producto);
+          try {
+            miProducto.save();
+            res.status(200).json({
+              msg:'Registro actualizado con éxito'            
+            })
+
+          } catch (error) {
+            res.status(400).json({
+              msg:'Error al actualizar registro'            
+            })
+          }
+          
+          
+
+        } else { //SI se ha enviado 'archivo'
+          const  { archivo } = req.files;
+          const nombreCortado = archivo.name.split(".");
+          const extension = nombreCortado[nombreCortado.length -1];
+          //validar la extensión
+          const extensionesValidas = ['jpg','jpeg','png','gif'];
+          if ( !extensionesValidas.includes(extension)){
+            return res.status(400).json({
+              msg: `La extensión ${extension} no está permitida ${extensionesValidas}`
+            })
+          }
+          const nombreTemporal = uuidv4() +'.' + extension;
+          //una vez que tiene el nombre del archivo temporal crea el objeto producto y lo guarda
+          const nombre = req.body.nombre;
+          const categoria = req.body.categoria;
+          const precio = req.body.precio;
+          const imagen = nombreTemporal;
+          const producto = {nombre,categoria,precio,imagen}
+          console.log(producto);
+          let miProducto = new Producto(producto);
+          miProducto.save();
+          //FIN DE LO QUE SE HA AÑADIDO A LA RUTA SUBIR
+          const path = require('path');
+          const uploadPath = path.join(__dirname,'../public/imagenes',nombreTemporal);
+          archivo.mv(uploadPath, function(err){
+            if ( err ) {
+              return res.status(500).json(err);
+            }
+            res.status(200).json({
+              msg:'Archivo subido con éxito',
+              uploadPath
+            
+            })
+          })
+ 
+        }
+      })
+
+
+
     /******* RUTA SUBIR ARCHIVOS */
     this.app.post(
       "/subir",
@@ -193,7 +262,7 @@ class Server {
 
     /******* RUTAS DEL PRODUCTO *****/
     this.app.get(
-      "/webresources/generic/productos/:id",
+      "/webresources/generic/producto/:id",validarJWT,
 
       async function (req, res) {
         const id = req.params.id;
@@ -212,7 +281,7 @@ class Server {
         );
       }
     );
-    this.app.post("/webresources/generic/productos", function (req, res) {
+    this.app.post("/webresources/generic/producto", function (req, res) {
       const body = req.body;
       let miProducto = new Producto(body);
       miProducto.save();
@@ -224,7 +293,7 @@ class Server {
     });
     //put-productos
     this.app.put(
-      "/webresources/generic/productos/:id",
+      "/webresources/generic/producto/:id",
       async function (req, res) {
         const body = req.body;
         const id = req.params.id;
@@ -238,7 +307,7 @@ class Server {
     );
     //delete PRODUCTOS
     this.app.delete(
-      "/webresources/generic/productos/:id",
+      "/webresources/generic/producto/:id",
       async function (req, res) {
         const id = req.params.id;
         await Producto.findByIdAndDelete(id);

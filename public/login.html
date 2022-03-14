@@ -30,7 +30,10 @@
                 },
                 })
                 .then((response) => response.json())
-                .then((json) => alert(json.msg + "Token: " + json.token))
+                .then((json) => {
+                    localStorage.setItem('token',json.token);
+                    window.location.href = getAbsolutePath() + "productos.html";
+            })
                         }
 
            function getAbsolutePath() {
